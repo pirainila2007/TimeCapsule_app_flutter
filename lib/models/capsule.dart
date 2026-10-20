@@ -9,10 +9,10 @@ class Capsule {
   /// Photo kept inside the capsule (guest mode / old capsules).
   final String? imageBase64;
 
-  /// Path of the photo in Supabase Storage (signed-in users).
+  /// Path of the photo or video in Supabase Storage (signed-in users).
   final String? mediaPath;
 
-  /// 'image' for now.
+  /// 'image' or 'video'.
   final String? mediaType;
 
   Capsule({
@@ -29,7 +29,10 @@ class Capsule {
 
   bool get isUnlocked => !DateTime.now().isBefore(openDate);
 
-  bool get hasImage => imageBase64 != null || mediaPath != null;
+  bool get hasVideo => mediaPath != null && mediaType == 'video';
+
+  bool get hasImage =>
+      imageBase64 != null || (mediaPath != null && mediaType != 'video');
 
   Map<String, dynamic> toJson() => {
         'id': id,

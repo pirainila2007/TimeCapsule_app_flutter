@@ -5,7 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MediaService {
   static const bucket = 'timecapsule-media';
-  static const maxImageBytes = 5 * 1024 * 1024; // 5 MB for capsule photos
+  static const maxImageBytes = 5 * 1024 * 1024; // 5 MB
+  static const maxVideoBytes = 50 * 1024 * 1024; // 50 MB (bucket limit)
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
@@ -47,7 +48,43 @@ class MediaService {
     return path;
   }
 
-  /// Temporary link (1 hour) to show a private file.
+  /// Uploads a capsule video, returns its storage path.
+  Future<String> uploadVideoBytes(Uint8List bytes, String extension) async {
+    final user = _supabase.auth.currentUser;
+
+    if (user == null) {
+      throw Exception('Please login first');
+    }
+
+    if (bytes.isEmpty) {
+      throw Exception('Could not read selected video');
+    }
+
+    if (bytes.length > maxVideoBytes) {
+      throw Exception('Video must be 50 MB or less');
+    }
+
+    final ext = extension.toLowerCase();
+    final safeExt = const {'mp4', 'mov', 'webm'}.contains(ext) ? ext : 'mp4';
+
+    final contentType = safeExt == 'mov'
+        ? 'video/quicktime'
+        : safeExt == 'webm'
+            ? 'video/webm'
+            : 'video/mp4';
+
+    final path = '${user.id}/${DateTime.now().microsecondsSinceEpoch}.$safeExt';
+
+    await _supabase.storage.from(bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: false),
+        );
+
+    return path;
+  }
+
+  /// Temporary link (1 hour) to show / play a private file.
   Future<String?> signedUrl(String? path) async {
     if (path == null || path.isEmpty) return null;
 
@@ -63,7 +100,7 @@ class MediaService {
     } catch (_) {}
   }
 
-  /// Picks an image or video and uploads it. (Not used by the UI yet.)
+  /// Picks an image or video and uploads it. (Not used by the UI.)
   Future<String?> pickAndUploadMedia() async {
     final user = _supabase.auth.currentUser;
 

@@ -32,11 +32,14 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
   String category = 'Letter to myself';
   DateTime openDate = DateTime.now().add(const Duration(days: 30));
 
-  Uint8List? photoBytes;
-  String photoExt = 'jpg';
+  // One attachment per capsule: a photo OR a video.
+  Uint8List? mediaBytes;
+  String mediaExt = 'jpg';
+  String mediaName = '';
+  bool mediaIsVideo = false;
   bool saving = false;
 
-  /// Signed-in users upload photos to Supabase Storage;
+  /// Signed-in users upload to Supabase Storage;
   /// guests keep a small photo inside the capsule on this device.
   bool get useCloud => supabaseReady && currentUserId != null;
 
@@ -45,6 +48,20 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
     titleController.dispose();
     messageController.dispose();
     super.dispose();
+  }
+
+  void showMessage(String text) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  String extensionOf(String name, String fallback) {
+    final dot = name.lastIndexOf('.');
+
+    if (dot == -1 || dot == name.length - 1) return fallback;
+
+    return name.substring(dot + 1).toLowerCase();
   }
 
   Future<void> chooseDate() async {
@@ -79,35 +96,64 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
       final limit = useCloud ? MediaService.maxImageBytes : 800000;
 
       if (bytes.length > limit) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              useCloud
-                  ? 'Choose a smaller photo (under 5 MB).'
-                  : 'Choose a smaller photo (under 800 KB). '
-                      'Sign in to attach bigger photos.',
-            ),
-          ),
+        showMessage(
+          useCloud
+              ? 'Choose a smaller photo (under 5 MB).'
+              : 'Choose a smaller photo (under 800 KB). '
+                  'Sign in to attach bigger photos.',
         );
         return;
       }
 
-      final dot = file.name.lastIndexOf('.');
-      final ext = dot == -1 ? 'jpg' : file.name.substring(dot + 1);
-
       setState(() {
-        photoBytes = bytes;
-        photoExt = ext.toLowerCase();
+        mediaBytes = bytes;
+        mediaName = file.name;
+        mediaExt = extensionOf(file.name, 'jpg');
+        mediaIsVideo = false;
       });
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not select photo: $e')),
-      );
+      showMessage('Could not select photo: $e');
     }
+  }
+
+  Future<void> chooseVideo() async {
+    if (!useCloud) {
+      showMessage('Sign in to attach a video.');
+      return;
+    }
+
+    try {
+      final file = await ImagePicker().pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 2),
+      );
+
+      if (file == null) return;
+
+      final bytes = await file.readAsBytes();
+
+      if (bytes.length > MediaService.maxVideoBytes) {
+        showMessage('Choose a shorter video (under 50 MB).');
+        return;
+      }
+
+      setState(() {
+        mediaBytes = bytes;
+        mediaName = file.name;
+        mediaExt = extensionOf(file.name, 'mp4');
+        mediaIsVideo = true;
+      });
+    } catch (e) {
+      showMessage('Could not select video: $e');
+    }
+  }
+
+  void removeMedia() {
+    setState(() {
+      mediaBytes = null;
+      mediaName = '';
+      mediaIsVideo = false;
+    });
   }
 
   Future<void> saveCapsule() async {
@@ -117,25 +163,27 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
 
     String? inlineImage;
     String? mediaPath;
+    String? mediaType;
 
     try {
-      final bytes = photoBytes;
+      final bytes = mediaBytes;
 
       if (bytes != null) {
-        if (useCloud) {
-          mediaPath = await MediaService().uploadImageBytes(bytes, photoExt);
-        } else {
+        if (!useCloud) {
           inlineImage = base64Encode(bytes);
+        } else if (mediaIsVideo) {
+          mediaPath = await MediaService().uploadVideoBytes(bytes, mediaExt);
+          mediaType = 'video';
+        } else {
+          mediaPath = await MediaService().uploadImageBytes(bytes, mediaExt);
+          mediaType = 'image';
         }
       }
     } catch (e) {
       if (!mounted) return;
 
       setState(() => saving = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not upload photo: $e')),
-      );
+      showMessage('Could not upload: $e');
       return;
     }
 
@@ -150,15 +198,59 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
       createdAt: DateTime.now(),
       imageBase64: inlineImage,
       mediaPath: mediaPath,
-      mediaType: mediaPath == null ? null : 'image',
+      mediaType: mediaType,
     );
 
     Navigator.pop(context, capsule);
   }
 
+  Widget mediaPreview() {
+    final bytes = mediaBytes!;
+
+    if (!mediaIsVideo) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.memory(bytes, height: 180, fit: BoxFit.cover),
+      );
+    }
+
+    final mb = (bytes.length / (1024 * 1024)).toStringAsFixed(1);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.videocam_rounded, color: AppColors.purple, size: 34),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  mediaName.isEmpty ? 'Video' : mediaName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$mb MB',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasPhoto = photoBytes != null;
+    final hasMedia = mediaBytes != null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Create a capsule')),
@@ -240,29 +332,45 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: saving ? null : choosePhoto,
-                  icon: Icon(
-                    hasPhoto
-                        ? Icons.check_circle_outline
-                        : Icons.add_photo_alternate_outlined,
-                  ),
-                  label: Text(hasPhoto ? 'Photo attached' : 'Attach a photo'),
-                ),
-                if (hasPhoto) ...[
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.memory(
-                      photoBytes!,
-                      height: 180,
-                      fit: BoxFit.cover,
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: saving ? null : choosePhoto,
+                        icon: Icon(
+                          hasMedia && !mediaIsVideo
+                              ? Icons.check_circle_outline
+                              : Icons.add_photo_alternate_outlined,
+                        ),
+                        label: Text(
+                          hasMedia && !mediaIsVideo ? 'Photo added' : 'Photo',
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: saving ? null : chooseVideo,
+                        icon: Icon(
+                          hasMedia && mediaIsVideo
+                              ? Icons.check_circle_outline
+                              : Icons.videocam_outlined,
+                        ),
+                        label: Text(
+                          hasMedia && mediaIsVideo ? 'Video added' : 'Video',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (hasMedia) ...[
+                  const SizedBox(height: 10),
+                  mediaPreview(),
                   TextButton(
-                    onPressed:
-                        saving ? null : () => setState(() => photoBytes = null),
-                    child: const Text('Remove photo'),
+                    onPressed: saving ? null : removeMedia,
+                    child: Text(
+                      mediaIsVideo ? 'Remove video' : 'Remove photo',
+                    ),
                   ),
                 ],
                 const SizedBox(height: 24),
@@ -289,7 +397,7 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
                   useCloud
                       ? 'Saved on this device and synced to your account.'
                       : 'Saved on this device only. Sign in to sync '
-                          'between devices.',
+                          'between devices and attach videos.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),

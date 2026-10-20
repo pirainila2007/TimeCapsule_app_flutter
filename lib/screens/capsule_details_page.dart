@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/capsule.dart';
 import '../utils/app_constants.dart';
 import '../widgets/capsule_image.dart';
+import '../widgets/capsule_video.dart';
 import '../widgets/countdown_text.dart';
 
 class CapsuleDetailsPage extends StatefulWidget {
@@ -237,6 +238,10 @@ class _CapsuleDetailsPageState extends State<CapsuleDetailsPage>
               if (unlocked) ...[
                 if (capsule.hasImage) ...[
                   CapsuleImage(capsule: capsule),
+                  const SizedBox(height: 20),
+                ],
+                if (capsule.hasVideo) ...[
+                  CapsuleVideo(capsule: capsule),
                   const SizedBox(height: 20),
                 ],
                 AnimatedBuilder(
