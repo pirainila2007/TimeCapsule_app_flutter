@@ -35,12 +35,8 @@ class NotificationService {
 
     await initialize();
 
-    final target = DateTime(
-      capsule.openDate.year,
-      capsule.openDate.month,
-      capsule.openDate.day,
-      9,
-    );
+    // Fire exactly when the capsule unlocks.
+    final target = capsule.openDate;
 
     if (!target.isAfter(DateTime.now())) return;
 
@@ -48,9 +44,8 @@ class NotificationService {
       id: capsule.id.hashCode & 0x7fffffff,
       title: 'Your TimeCapsule is ready! 💜',
       body: '"${capsule.title}" is waiting for you.',
-      // Absolute instant = now + remaining time, correct in any time zone.
-      scheduledDate: tz.TZDateTime.now(tz.UTC)
-          .add(target.difference(DateTime.now())),
+      // Same instant expressed in UTC, correct in any time zone.
+      scheduledDate: tz.TZDateTime.from(target, tz.UTC),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'time_capsule_openings',

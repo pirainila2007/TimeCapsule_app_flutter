@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
 import '../utils/app_constants.dart';
+import 'verify_otp_page.dart';
 
 class LoginPage extends StatefulWidget {
   /// Shown as "Continue without account" when provided.
@@ -34,6 +35,21 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  /// Opens the code-entry page. If the user verifies, AuthGate swaps to the
+  /// home page by itself (this page is disposed, so `mounted` is false).
+  Future<void> openVerify(String email) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => VerifyOtpPage(email: email.trim())),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      signUpMode = false;
+      info = 'Verified your email? Sign in with your password.';
+    });
+  }
+
   Future<void> submit() async {
     if (!formKey.currentState!.validate()) return;
 
@@ -43,25 +59,37 @@ class _LoginPageState extends State<LoginPage> {
       info = null;
     });
 
+    final email = emailController.text.trim();
+
     try {
       final auth = AuthService();
 
       if (signUpMode) {
         final response = await auth.signUp(
-          emailController.text,
+          email,
           passwordController.text,
           fullName: nameController.text,
         );
 
-        // Email confirmation is on: no session until the user confirms.
-        if (response.session == null) {
+        // Supabase does not throw for an already-confirmed email; it returns
+        // a user with no identities instead.
+        final identities = response.user?.identities;
+
+        if (response.user != null && identities != null && identities.isEmpty) {
           if (!mounted) return;
 
           setState(() {
             signUpMode = false;
-            info = 'Account created! Check your email to confirm it, '
-                'then sign in.';
+            error = 'This email is already registered. Please sign in.';
           });
+          return;
+        }
+
+        // Email confirmation is on: no session until the code is entered.
+        if (response.session == null) {
+          if (!mounted) return;
+
+          await openVerify(email);
           return;
         }
       } else {
@@ -79,6 +107,16 @@ class _LoginPageState extends State<LoginPage> {
         Navigator.of(context).pop();
       }
     } on AuthException catch (e) {
+      // Signed up earlier but never entered the code: send a new one.
+      if (!signUpMode && e.message.toLowerCase().contains('not confirmed')) {
+        try {
+          await AuthService().resendEmailCode(email);
+        } catch (_) {}
+
+        if (mounted) await openVerify(email);
+        return;
+      }
+
       if (mounted) setState(() => error = e.message);
     } catch (_) {
       if (mounted) {

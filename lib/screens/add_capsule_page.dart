@@ -30,7 +30,14 @@ class _AddCapsulePageState extends State<AddCapsulePage> {
   ];
 
   String category = 'Letter to myself';
-  DateTime openDate = DateTime.now().add(const Duration(days: 30));
+  // Always 9:00 AM, same as a picked date, so the notification and the
+  // unlock time match.
+  DateTime openDate = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day + 30,
+    9,
+  );
 
   // One attachment per capsule: a photo OR a video.
   Uint8List? mediaBytes;

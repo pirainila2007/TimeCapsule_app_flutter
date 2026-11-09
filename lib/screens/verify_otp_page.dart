@@ -32,7 +32,7 @@ class _VerifyOtpPageState extends State<VerifyOtpPage> {
   @override
   void initState() {
     super.initState();
-    startCountdown();
+    startTimer();
   }
 
   @override
@@ -43,8 +43,12 @@ class _VerifyOtpPageState extends State<VerifyOtpPage> {
   }
 
   void startCountdown() {
-    timer?.cancel();
     setState(() => resendIn = resendSeconds);
+    startTimer();
+  }
+
+  void startTimer() {
+    timer?.cancel();
 
     timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
@@ -171,7 +175,7 @@ class _VerifyOtpPageState extends State<VerifyOtpPage> {
                     fontWeight: FontWeight.bold,
                   ),
                   decoration: const InputDecoration(
-                    hintText: '00000000',
+                    hintText: '000000',
                     counterText: '',
                   ),
                 ),

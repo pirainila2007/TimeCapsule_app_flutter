@@ -73,6 +73,17 @@ class _HomePageState extends State<HomePage> {
     try {
       final beforeIds = capsules.map((c) => c.id).toSet();
       final merged = await CapsuleSyncService.sync(uid, capsules);
+
+      // A capsule created while the sync was running is not in `merged`.
+      // Keep it, otherwise it would vanish from the list and local storage.
+      for (final c in capsules) {
+        if (!beforeIds.contains(c.id) && !merged.any((m) => m.id == c.id)) {
+          merged.add(c);
+        }
+      }
+
+      merged.sort((a, b) => a.openDate.compareTo(b.openDate));
+
       final mergedIds = merged.map((c) => c.id).toSet();
 
       await CapsuleStorage.save(merged, userId: uid);
@@ -217,7 +228,11 @@ class _HomePageState extends State<HomePage> {
 
     if (uid != null && supabaseReady) {
       try {
-        await CapsuleSyncService.remove(uid, capsule.id);
+        await CapsuleSyncService.remove(
+          uid,
+          capsule.id,
+          mediaPath: capsule.mediaPath,
+        );
       } catch (e) {
         debugPrint('Cloud delete failed: $e');
       }
